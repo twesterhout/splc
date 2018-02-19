@@ -16,13 +16,16 @@ extra-source-files:  README.md
 library
   hs-source-dirs:      src
   exposed-modules:     Lexer
+                     , Types
   build-depends:       base >= 4.7 && < 5
                      , deepseq
                      , semigroups
                      , text
                      , transformers
-                     , pipes
+                     -- , pipes
                      , megaparsec
+                     , microlens
+                     , microlens-th
   ghc-options:         -O2 -Wall -fprof-auto -fprof-cafs
   default-language:    Haskell2010
 
