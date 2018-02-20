@@ -13,8 +13,36 @@ build-type:          Simple
 cabal-version:       >=1.10
 extra-source-files:  README.md
 
+library
+  hs-source-dirs:      src
+  exposed-modules:     Lexer
+                     , Types
+  build-depends:       base >= 4.7 && < 5
+                     , deepseq
+                     , semigroups
+                     , text
+                     , transformers
+                     -- , pipes
+                     , megaparsec
+                     , microlens
+                     , microlens-th
+  ghc-options:         -O2 -Wall -fprof-auto -fprof-cafs
+  default-language:    Haskell2010
+
 executable splc
   hs-source-dirs:      src
   main-is:             Main.hs
-  default-language:    Haskell2010
   build-depends:       base >= 4.7 && < 5
+                     , splc
+  default-language:    Haskell2010
+
+test-suite splc-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  other-modules:       LexerSpec
+  build-depends:       base >= 4.7 && < 5
+                     , splc
+                     , hspec
+                     , hspec-discover
+  default-language:    Haskell2010
