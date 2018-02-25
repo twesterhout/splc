@@ -19,9 +19,11 @@
 -- Stability   : experimental
 module Types
   ( TokenData(..)
+  , SourcePos(..)
   , TokenPos(..)
   , Token(..)
   , Input(..)
+  , LexError(..)
   , HasPath(..)
   , HasRowSpan(..)
   , HasColSpan(..)
@@ -35,13 +37,15 @@ import Control.DeepSeq
 import GHC.Generics (Generic)
 import qualified Data.Text as T
 import Text.Megaparsec.Pos
+import Lens.Micro
 import Lens.Micro.TH
-
+import qualified Text.PrettyPrint.ANSI.Leijen as P
 
 
 data TokenData
   = TkVarId {-# UNPACK #-}!T.Text
   | TkConId {-# UNPACK #-}!T.Text
+  | TkBool {-# UNPACK #-}!Bool
   | TkInt {-# UNPACK #-}!Int
   | TkFloat {-# UNPACK #-}!Float
   | TkChar {-# UNPACK #-}!Char
@@ -94,3 +98,19 @@ data Input = Input { _inputPosition :: !SourcePos
                    } deriving (Read, Show, Eq, Generic)
 
 makeFields ''Input
+
+
+data LexError = LexError !SourcePos !T.Text
+  deriving (Eq, Generic)
+
+instance NFData LexError
+
+instance P.Pretty LexError where
+  pretty (LexError pos msg) =
+    P.red (P.string "Error:")
+      P.<+> P.string (pos ^. path) P.<+> P.colon
+      P.<+> P.int (fromIntegral . unPos $ (pos ^. row)) P.<+> P.colon
+      P.<+> P.int (fromIntegral . unPos $ (pos ^. column)) P.<+> P.string (T.unpack msg)
+
+instance Show LexError where
+  show x = P.displayS (P.renderPretty 0.4 50 . P.pretty $ x) ""
