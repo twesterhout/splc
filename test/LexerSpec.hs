@@ -21,24 +21,6 @@ import Lexer
 main :: IO ()
 main = hspec spec
 
-
-source1 =
-  "main()::->Void\n\
-  \{\n\
-  \    if( True )// hello world!\n\
-  \    {\n\
-  \        /* Tralala! sdf\n\
-  \        Int a = 10;\n\
-  \        */\n\
-  \        Int a = 10;\n\
-  \        print(a);\n\
-  \    }\n\
-  \    else\n\
-  \    {\n\
-  \        print(100);\n\
-  \    }\n\
-  \}// sdf;lkj"
-
 showPretty :: Either LexError [Token] -> IO ()
 showPretty (Left err) = P.putDoc . P.pretty $ err
 showPretty (Right xs) = mapM_ print xs
@@ -53,19 +35,51 @@ spec = do
     it "Recognises variable identifiers" $
       do scanSimple "   abc2 " `shouldBe`
          --          12345678
-           Right [Token (tkPos (1, 1) (4, 8)) (TkVarId "abc2")]
+           Right [Token (tkPos (1, 1) (4, 8)) (TkId "abc2")]
          scanSimple "// hello\n\
                     \ ψα2β //     \r\n\f" `shouldBe`
          --          123456789
-           Right [Token (tkPos (2, 2) (2, 6)) (TkVarId "ψα2β")]
+           Right [Token (tkPos (2, 2) (2, 6)) (TkId "ψα2β")]
+    it "Recognises keywords" $
+      do scanSimple " return a; // returns an a " `shouldBe`
+         --          12345678
+           Right [ Token (tkPos (1, 1) (2,   8)) (TkKeyword KwReturn)
+                 , Token (tkPos (1, 1) (9,  10)) (TkId "a")
+                 , Token (tkPos (1, 1) (10, 11)) (TkPunctuation PtSemiColon)
+                 ]
+         scanSimple " returna; // does not return a " `shouldBe`
+         --          123456789
+           Right [ Token (tkPos (1, 1) (2,  9)) (TkId "returna")
+                 , Token (tkPos (1, 1) (9, 10)) (TkPunctuation PtSemiColon)
+                 ]
+         scanSimple " if( " `shouldBe`
+         --          12345678
+           Right [ Token (tkPos (1, 1) (2,  4)) (TkKeyword KwIf)
+                 , Token (tkPos (1, 1) (4,  5)) (TkPunctuation PtLParen)
+                 ]
+         scanSimple " if (True){\n\
+                    \}else{;} " `shouldBe`
+         --          123456789012345
+           Right [ Token (tkPos (1, 1) (2,   4)) (TkKeyword KwIf)
+                 , Token (tkPos (1, 1) (5,   6)) (TkPunctuation PtLParen)
+                 , Token (tkPos (1, 1) (6,  10)) (TkBool True)
+                 , Token (tkPos (1, 1) (10, 11)) (TkPunctuation PtRParen)
+                 , Token (tkPos (1, 1) (11, 12)) (TkPunctuation PtLBrace)
+                 , Token (tkPos (2, 2) (1,   2)) (TkPunctuation PtRBrace)
+                 , Token (tkPos (2, 2) (2,   6)) (TkKeyword KwElse)
+                 , Token (tkPos (2, 2) (6,   7)) (TkPunctuation PtLBrace)
+                 , Token (tkPos (2, 2) (7,   8)) (TkPunctuation PtSemiColon)
+                 , Token (tkPos (2, 2) (8,   9)) (TkPunctuation PtRBrace)
+                 ]
     it "Recognises integer literals" $
       do scanSimple " ψα2β+ 00432-;//     " `shouldBe`
          --          123456789   13
-           Right [ Token (tkPos (1, 1) (2, 6)) (TkVarId "ψα2β")
-                 , Token (tkPos (1, 1) (6, 7)) (TkOther '+')
-                 , Token (tkPos (1, 1) (8, 13)) (TkInt 432)
-                 , Token (tkPos (1, 1) (13, 14)) (TkOther '-')
-                 , Token (tkPos (1, 1) (14, 15)) (TkOther ';')]
+           Right [ Token (tkPos (1, 1) (2,   6)) (TkId "ψα2β")
+                 , Token (tkPos (1, 1) (6,   7)) (TkOperator OpPlus)
+                 , Token (tkPos (1, 1) (8,  13)) (TkInt 432)
+                 , Token (tkPos (1, 1) (13, 14)) (TkOperator OpMinus)
+                 , Token (tkPos (1, 1) (14, 15)) (TkPunctuation PtSemiColon)
+                 ]
     it "Detects overflow in integer literals" $
       do scanSimple " α + 11123456789876543211123  " `shouldBe`
          --          123456789
@@ -75,10 +89,8 @@ spec = do
          scanSimple " α + 1123456789876543211  " `shouldBe`
          --               9223372036854775807
          --          123456789
-           Right [ Token (tkPos (1, 1) (2, 3)) (TkVarId "α")
-                 , Token (tkPos (1, 1) (4, 5)) (TkOther '+')
-                 , Token (tkPos (1, 1) (6, 25)) (TkInt 1123456789876543211)]
-    it "Dummy" $
-      do let x = scanSimple source1
-         isRight x `shouldBe` True
+           Right [ Token (tkPos (1, 1) (2,  3)) (TkId "α")
+                 , Token (tkPos (1, 1) (4,  5)) (TkOperator OpPlus)
+                 , Token (tkPos (1, 1) (6, 25)) (TkInt 1123456789876543211)
+                 ]
 
