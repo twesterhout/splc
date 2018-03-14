@@ -71,10 +71,13 @@ import Numeric (showHex)
 
 -- import Pipes
 -- import qualified Pipes.Prelude as P
-import Text.Megaparsec.Pos (defaultTabWidth)
+-- import Text.Megaparsec.Pos (defaultTabWidth)
 
 -- import Lens.Micro.TH
 import Types
+
+
+
 
 -- | Converts an input stream into a list of tokens.
 scan :: Input -> Except LexError [Token]
@@ -92,7 +95,7 @@ scan stream@(view text -> txt)
           _ -> mkToken' divide c s >>= andLoop
       | otherwise = scanToken' c s >>= andLoop
     andLoop (t, s) = (:) t <$> scan s
-    divide x s = assert (x == '/') $ return (TkOperator OpDivide, moveRight s)
+    divide x s = assert (x == '/') $ return (TkDivide, moveRight s)
 
 scanSpace' :: Char -> Input -> Input
 scanSpace' c s = assert (Char.isSpace c) $ skip' c s
@@ -157,7 +160,7 @@ scanToken' x s =
 scanId' :: Char -> Input -> Except LexError (TokenData, Input)
 scanId' !x =
   assert (Char.isAlpha x) $
-  go . moveRight >=> return . first (TkId . T.pack . (:) x)
+  go . moveRight >=> return . first (TkIdent . T.pack . (:) x)
   where
     go s@(view text -> (c:_))
       | Char.isAlphaNum c = first ((:) c) <$> go (unsafeSkipPrint s)
@@ -206,8 +209,8 @@ scanDash' = mkToken' go
       | x == '-' =
         case txt of
           ('>':_) ->
-            return (TkPunctuation PtRArrow, unsafeSkipPrint . moveRight $ s)
-          _ -> return (TkOperator OpMinus, moveRight s)
+            return (TkRArrow, unsafeSkipPrint . moveRight $ s)
+          _ -> return (TkMinus, moveRight s)
       | otherwise = throwE $ unexpectedCharError x s
 
 -- | Constructs an error string indicating a bug in the mentioned function.
@@ -312,26 +315,24 @@ scanOperator' = mkToken' go'
   where
     go' x s = assert (Char.generalCategory x == Char.MathSymbol) $ go x s
     go x s@(view text -> txt)
-      | x == '+' = o OpPlus s
+      | x == '+' = single TkPlus s
       | x == '=' =
         case txt of
-          ('=':_) -> o2 OpEqual s
-          _ -> o OpAssign s
+          ('=':_) -> double TkEqual s
+          _ -> single TkAssign s
       | x == '<' =
         case txt of
-          ('=':_) -> o2 OpLessEqual s
-          _ -> o OpLess s
+          ('=':_) -> double TkLessEqual s
+          _ -> single TkLess s
       | x == '>' =
         case txt of
-          ('=':_) -> o2 OpGreaterEqual s
-          _ -> o OpGreater s
+          ('=':_) -> double TkGreaterEqual s
+          _ -> single TkGreater s
       | x == '|' =
         case txt of
-          ('|':_) -> double (TkOperator OpOr) s
+          ('|':_) -> double (TkOr) s
           _ -> invalidOperator x s
       | otherwise = throwE $ unexpectedCharError x s
-    o t = single (TkOperator t)
-    o2 t = double (TkOperator t)
     single t s = return (t, moveRight s)
     double t s = return (t, unsafeSkipPrint . moveRight $ s)
     invalidOperator _ (view position -> p) =
@@ -342,34 +343,32 @@ scanPunctuation' = mkToken' go'
   where
     go' x s = assert (Char.generalCategory x == Char.OtherPunctuation) $ go x s
     go x s@(view text -> txt)
-      | x == ';' = pt PtSemiColon s
-      | x == ',' = pt PtComma s
-      | x == '*' = op OpTimes s
-      | x == '%' = op OpModulo s
+      | x == ';' = tk TkSemiColon s
+      | x == ',' = tk TkComma s
+      | x == '*' = tk TkTimes s
+      | x == '%' = tk TkModulo s
       | x == '.' =
         case txt of
-          ('h':'d':_) -> gt GtHead (unsafeSkipPrintN 2 s)
-          ('t':'l':_) -> gt GtTail (unsafeSkipPrintN 2 s)
-          ('f':'s':'t':_) -> gt GtFirst (unsafeSkipPrintN 3 s)
-          ('s':'n':'d':_) -> gt GtSecond (unsafeSkipPrintN 3 s)
+          ('h':'d':_) -> tk TkHead (unsafeSkipPrintN 2 s)
+          ('t':'l':_) -> tk TkTail (unsafeSkipPrintN 2 s)
+          ('f':'s':'t':_) -> tk TkFirst (unsafeSkipPrintN 3 s)
+          ('s':'n':'d':_) -> tk TkSecond (unsafeSkipPrintN 3 s)
           _ -> invalidOperator x s
       | x == ':' =
         case txt of
-          (':':_) -> pt PtDoubleColon (unsafeSkipPrint s)
-          _ -> op OpPrepend s
+          (':':_) -> tk TkDoubleColon (unsafeSkipPrint s)
+          _ -> tk TkPrepend s
       | x == '&' =
         case txt of
-          ('&':_) -> op OpAnd (unsafeSkipPrint s)
+          ('&':_) -> tk TkAnd (unsafeSkipPrint s)
           _ -> invalidOperator x s
       | x == '!' =
         case txt of
-          ('=':_) -> op OpNotEqual (unsafeSkipPrint s)
-          _ -> op OpNot s
+          ('=':_) -> tk TkNotEqual (unsafeSkipPrint s)
+          _ -> tk TkNot s
       | x == '\'' = scanChar' x s
       | otherwise = throwE $ unexpectedCharError x s
-    op t s = return (TkOperator t, moveRight s)
-    pt t s = return (TkPunctuation t, moveRight s)
-    gt t s = return (TkGetter t, moveRight s)
+    tk t s = return (t, moveRight s)
     invalidOperator _ (view position -> p) =
       throwE $ LexError p "Invalid operator."
 
@@ -377,29 +376,29 @@ scanSimple :: T.Text -> Either LexError [Token]
 scanSimple = runExcept . scan . Input (SourcePos "" pos1 pos1) . T.unpack
 
 tryToKeyword :: TokenData -> TokenData
-tryToKeyword t@(TkId !txt) =
+tryToKeyword t@(TkIdent !txt) =
   case txt of
-    "if" -> TkKeyword KwIf
-    "else" -> TkKeyword KwElse
-    "var" -> TkKeyword KwVar
-    "while" -> TkKeyword KwWhile
-    "return" -> TkKeyword KwReturn
+    "if" -> TkIf
+    "else" -> TkElse
+    "var" -> TkVar
+    "while" -> TkWhile
+    "return" -> TkReturn
     _ -> t
 tryToKeyword _ =
   error $ bugMessage "Lexer.tryToKeyword" "Non-exhaustive pattern."
 
 tryToBasicType :: TokenData -> TokenData
-tryToBasicType t@(TkId !txt) =
+tryToBasicType t@(TkIdent !txt) =
   case txt of
-    "Int" -> TkType TpInt
-    "Bool" -> TkType TpBool
-    "Char" -> TkType TpChar
-    "Void" -> TkType TpVoid
+    "Int" -> TkTpInt
+    "Bool" -> TkTpBool
+    "Char" -> TkTpChar
+    "Void" -> TkTpVoid
     _ -> t
 tryToBasicType t = t
 
 tryToBool :: TokenData -> TokenData
-tryToBool t@(TkId !txt) =
+tryToBool t@(TkIdent !txt) =
   case txt of
     "True" -> TkBool True
     "False" -> TkBool False
@@ -420,19 +419,15 @@ is2OpStart c =
   c == '*' ||
   c == '/' || c == '%' || c == '<' || c == '>' || c == '!' || c == '.'
 
--- |
-isValidAfterId :: Char -> Bool
-isValidAfterId c = isValidAfterExp c || c == '(' || c == '{'
-
 infix 2 `upto`
 
-upto :: SourcePos -> SourcePos -> TokenPos
+upto :: SourcePos -> SourcePos -> Span
 upto !p !q =
   assert (p ^. path == q ^. path) $
   assert
     ((p ^. row == q ^. row) && (p ^. column < q ^. column) ||
      (p ^. row < q ^. row)) $
-  TokenPos (p ^. path) (p ^. row, q ^. row) (p ^. column, q ^. column)
+  Span p q
 
 
 scanChar' :: Char -> Input -> Except LexError (TokenData, Input)
@@ -465,21 +460,21 @@ scanChar' = go
 scanOpen' :: Char -> Input -> Except LexError (Token, Input)
 scanOpen' = mkToken' go
   where
-    pt x s = return (TkPunctuation x, moveRight s)
+    pt x s = return (x, moveRight s)
     go x
-      | x == '(' = pt PtLParen
-      | x == '[' = pt PtLBracket
-      | x == '{' = pt PtLBrace
+      | x == '(' = pt TkLParen
+      | x == '[' = pt TkLBracket
+      | x == '{' = pt TkLBrace
       | otherwise = throwE . unexpectedCharError x
 
 scanClose' :: Char -> Input -> Except LexError (Token, Input)
 scanClose' = mkToken' go
   where
-    pt x s = return (TkPunctuation x, moveRight s)
+    pt x s = return (x, moveRight s)
     go x
-      | x == ')' = pt PtRParen
-      | x == ']' = pt PtRBracket
-      | x == '}' = pt PtRBrace
+      | x == ')' = pt TkRParen
+      | x == ']' = pt TkRBracket
+      | x == '}' = pt TkRBrace
       | otherwise = throwE . unexpectedCharError x
 
 

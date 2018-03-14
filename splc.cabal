@@ -16,6 +16,7 @@ extra-source-files:  README.md
 library
   hs-source-dirs:      src
   exposed-modules:     Lexer
+                     , Parser
                      , Types
   build-depends:       base >= 4.7 && < 5
                      , deepseq
@@ -24,9 +25,13 @@ library
                      , transformers
                      -- , pipes
                      , megaparsec
+                     , parser-combinators
                      , microlens
                      , microlens-th
                      , ansi-wl-pprint
+                     , containers
+                     , void
+                     , recursion-schemes
   ghc-options:         -Wall -fprof-auto -fprof-cafs
   default-language:    Haskell2010
 
